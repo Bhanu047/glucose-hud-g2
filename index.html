@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <title>Glucose HUD</title>
+    <style>
+      :root {
+        --bg: #232323;
+        --card: #2c2c2c;
+        --fg: #e5e5e5;
+        --muted: #9a9a9a;
+        --accent: #7ee787;
+        --err: #ff7b72;
+        --line: #3a3a3a;
+      }
+      html, body {
+        margin: 0;
+        min-height: 100%;
+        background: var(--bg);
+        color: var(--fg);
+        font: 15px/1.45 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+        touch-action: manipulation;
+        -webkit-text-size-adjust: 100%;
+        overscroll-behavior: none;
+      }
+      #app { padding: 20px 16px 40px; max-width: 520px; margin: 0 auto; }
+      h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
+      .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+      .card h2 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+      label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
+      input, select {
+        width: 100%; box-sizing: border-box;
+        background: #1b1b1b; color: var(--fg);
+        border: 1px solid var(--line); border-radius: 8px;
+        padding: 10px 12px; font-size: 15px;
+      }
+      input:focus, select:focus { outline: none; border-color: var(--accent); }
+      .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .actions { display: flex; gap: 10px; margin-top: 14px; }
+      button {
+        flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--line);
+        background: #1b1b1b; color: var(--fg); font-size: 15px;
+      }
+      button.primary { background: var(--accent); color: #0b2a10; border-color: var(--accent); font-weight: 600; }
+      button:disabled { opacity: .5; }
+      #msg { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+      #msg.ok { color: var(--accent); }
+      #msg.err { color: var(--err); }
+      #preview { text-align: center; padding: 10px 0 4px; }
+      #preview .big { font-size: 56px; font-weight: 700; letter-spacing: -1px; color: var(--accent); }
+      #preview .arrow { font-size: 40px; }
+      #preview .sub { color: var(--muted); font-size: 14px; }
+      #preview .sub.err { color: var(--err); }
+      .fine { color: var(--muted); font-size: 12px; margin-top: 8px; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <h1>Glucose HUD</h1>
+      <p class="note" id="glasses-note"></p>
+
+      <div class="card">
+        <h2>Now</h2>
+        <div id="preview"><div class="sub">No reading yet</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Nightscout</h2>
+        <label for="ns-url">Site URL</label>
+        <input id="ns-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://my-site.example.com" />
+        <label for="ns-token">Access token <span style="font-weight:400">(if your site requires one)</span></label>
+        <input id="ns-token" type="password" autocapitalize="off" autocorrect="off" placeholder="readable-abc123…" />
+        <label for="relay-url">Relay URL</label>
+        <input id="relay-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://glucose-relay.example.workers.dev" />
+        <p class="fine">Even Hub only lets a plugin reach pre-approved servers, so readings pass through a stateless relay that stores nothing. Leave blank in the simulator to call Nightscout directly.</p>
+      </div>
+
+      <div class="card">
+        <h2>Display</h2>
+        <label for="units">Units</label>
+        <select id="units">
+          <option value="mgdl">mg/dL</option>
+          <option value="mmol">mmol/L</option>
+        </select>
+        <div class="row">
+          <div><label for="t-low">Low</label><input id="t-low" type="number" inputmode="decimal" step="any" /></div>
+          <div><label for="t-high">High</label><input id="t-high" type="number" inputmode="decimal" step="any" /></div>
+          <div><label for="t-ulow">Urgent low</label><input id="t-ulow" type="number" inputmode="decimal" step="any" /></div>
+          <div><label for="t-uhigh">Urgent high</label><input id="t-uhigh" type="number" inputmode="decimal" step="any" /></div>
+        </div>
+        <label for="poll">Refresh every</label>
+        <select id="poll">
+          <option value="60">1 minute</option>
+          <option value="120">2 minutes</option>
+          <option value="300">5 minutes</option>
+        </select>
+      </div>
+
+      <div class="actions">
+        <button id="test">Test connection</button>
+        <button id="save" class="primary">Save</button>
+      </div>
+      <div id="msg"></div>
+
+      <p class="fine">This plugin displays data from your own Nightscout site for convenience. It is not a medical device; always confirm with your meter or CGM app before making treatment decisions.</p>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
