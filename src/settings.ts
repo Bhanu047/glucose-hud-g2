@@ -14,7 +14,8 @@ export interface Settings {
 export const DEFAULT_SETTINGS: Settings = {
   nightscoutUrl: '',
   token: '',
-  relayUrl: '',
+  // Public stateless relay (see relay/worker.js). Users can point at their own.
+  relayUrl: 'https://glucose-relay.bhanumanideep.workers.dev',
   units: 'mgdl',
   thresholds: { ...DEFAULT_THRESHOLDS },
   pollSeconds: 60,

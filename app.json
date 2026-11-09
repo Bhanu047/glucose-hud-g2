@@ -10,7 +10,7 @@
     {
       "name": "network",
       "desc": "Fetches your latest glucose reading from your own Nightscout site via a stateless relay that stores nothing.",
-      "whitelist": ["https://glucose-relay.REPLACE-ME.workers.dev"]
+      "whitelist": ["https://glucose-relay.bhanumanideep.workers.dev"]
     }
   ],
   "supported_languages": ["en"]
