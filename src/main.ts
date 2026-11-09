@@ -1,14 +1,10 @@
 import { OsEventTypeList, waitForEvenAppBridge, type EvenAppBridge } from '@evenrealities/even_hub_sdk'
-import { Hud, buildModel, errorModel, setupModel } from './hud'
-import { fetchReading, type Reading } from './nightscout'
-import { isConfigured, loadSettings, saveSettings } from './settings'
+import { Hud, buildModel, messageModel, type HudModel } from './hud'
+import type { Point } from './glucose'
+import { fetchPoints, profileIsComplete, type Profile, type Session } from './sources'
+import { activeProfile, loadSessions, loadSettings, saveSessions, saveSettings } from './settings'
 import { mountPhoneUi } from './phone-ui'
 
-/**
- * The Even App injects the bridge into the WebView. In a plain desktop browser
- * (vite dev without the simulator) it never appears, so give it a moment and
- * then run phone-UI-only so settings can still be edited and tested.
- */
 async function getBridge(timeoutMs = 1500): Promise<EvenAppBridge | null> {
   return Promise.race<EvenAppBridge | null>([
     waitForEvenAppBridge(),
@@ -18,8 +14,7 @@ async function getBridge(timeoutMs = 1500): Promise<EvenAppBridge | null> {
 
 function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeList | null {
   if (!envelope) return null
-  // CLICK_EVENT is 0 and protobuf drops zero-valued fields, so a tap arrives
-  // with eventType undefined. Resolve the default only inside a real envelope.
+  // CLICK_EVENT is 0 and protobuf drops zero-valued fields; resolve inside a real envelope only.
   return envelope.eventType ?? OsEventTypeList.CLICK_EVENT
 }
 
@@ -27,7 +22,7 @@ function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeLis
 function friendlyError(e: unknown): string {
   const msg = (e as Error)?.message || ''
   if ((e as Error)?.name === 'TypeError' || /load failed|failed to fetch|network/i.test(msg)) {
-    return "Can't reach Nightscout — check URL / relay"
+    return "Can't reach the server — check connection / relay"
   }
   return msg || 'Request failed'
 }
@@ -35,18 +30,32 @@ function friendlyError(e: unknown): string {
 async function main() {
   const bridge = await getBridge()
   let settings = await loadSettings(bridge)
-  let reading: Reading | null = null
-  let lastError: string | null = null
+  const sessions = await loadSessions(bridge)
+  /** history per profile id, kept so switching people is instant */
+  const history = new Map<string, Point[]>()
+  const errors = new Map<string, string>()
   let inFlight: AbortController | null = null
   let pollTimer: ReturnType<typeof setInterval> | null = null
   let tickTimer: ReturnType<typeof setInterval> | null = null
 
   const hud = bridge ? new Hud(bridge) : null
 
-  const currentModel = () => {
-    if (!isConfigured(settings)) return setupModel()
-    if (lastError && !reading) return errorModel(lastError)
-    return buildModel(reading, settings)
+  const person = () => {
+    const p = activeProfile(settings)
+    return p ? { name: p.name, index: settings.active, count: settings.profiles.length } : undefined
+  }
+
+  const currentModel = (): HudModel => {
+    const p = activeProfile(settings)
+    if (!p || !profileIsComplete(p)) {
+      return messageModel('Setup', 'needed', 'Open this plugin on\nyour phone and add\na person to follow.', 'Not configured')
+    }
+    const pts = history.get(p.id) ?? []
+    const err = errors.get(p.id)
+    if (err && pts.length === 0) {
+      return messageModel('Error', 'check settings on phone', '', `▲ ${err}`.slice(0, 110))
+    }
+    return buildModel(pts, settings, person())
   }
 
   const paint = async () => {
@@ -58,65 +67,85 @@ async function main() {
     }
   }
 
+  const phoneState = () => {
+    const p = activeProfile(settings)
+    return { settings, points: p ? (history.get(p.id) ?? []) : [], error: p ? (errors.get(p.id) ?? null) : null }
+  }
+
   const refresh = async (): Promise<void> => {
-    if (!isConfigured(settings)) {
+    const p = activeProfile(settings)
+    if (!p || !profileIsComplete(p)) {
       await paint()
+      phone.render(phoneState())
       return
     }
     inFlight?.abort()
     inFlight = new AbortController()
     try {
-      reading = await fetchReading({
-        nightscoutUrl: settings.nightscoutUrl,
-        token: settings.token || undefined,
-        relayUrl: settings.relayUrl || undefined,
-        signal: inFlight.signal,
-      })
-      lastError = null
+      const r = await fetchPoints(p, settings.relayUrl || undefined, sessions[p.id] ?? null, inFlight.signal)
+      history.set(p.id, r.points)
+      errors.delete(p.id)
+      if (r.session) {
+        sessions[p.id] = r.session
+        void saveSessions(bridge, sessions)
+      }
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
-      lastError = friendlyError(e)
-      console.warn('refresh failed', lastError)
+      errors.set(p.id, friendlyError(e))
+      console.warn('refresh failed', errors.get(p.id))
     }
     await paint()
-    phone.render({ settings, reading, lastError })
+    phone.render(phoneState())
   }
 
-  const startTimers = () => {
-    stopTimers()
-    pollTimer = setInterval(refresh, Math.max(30, settings.pollSeconds) * 1000)
-    // Re-paint once a minute so "N min ago" and stale state stay honest
-    // between polls without hitting the network.
-    tickTimer = setInterval(paint, 60_000)
-  }
   const stopTimers = () => {
     if (pollTimer) clearInterval(pollTimer)
     if (tickTimer) clearInterval(tickTimer)
     pollTimer = tickTimer = null
   }
+  const startTimers = () => {
+    stopTimers()
+    pollTimer = setInterval(refresh, Math.max(30, settings.pollSeconds) * 1000)
+    // Keep "N min ago", staleness and the prediction honest between polls.
+    tickTimer = setInterval(paint, 60_000)
+  }
 
-  // Phone-side settings UI (runs in the WebView on the phone, not the glasses).
+  const switchPerson = async (step: number) => {
+    const n = settings.profiles.length
+    if (n < 2) return
+    settings.active = (settings.active + step + n) % n
+    void saveSettings(bridge, settings)
+    await paint() // show cached history instantly
+    await refresh()
+  }
+
   const phone = mountPhoneUi({
     initial: settings,
     hasGlasses: !!bridge,
     onSave: async next => {
+      // Drop sessions for people whose credentials changed or who were removed.
+      const before = new Map(settings.profiles.map(p => [p.id, p]))
+      for (const p of next.profiles) {
+        const old = before.get(p.id)
+        if (!old || old.username !== p.username || old.password !== p.password || old.region !== p.region || old.source !== p.source) {
+          delete sessions[p.id]
+          history.delete(p.id)
+        }
+      }
+      for (const id of Object.keys(sessions)) if (!next.profiles.some(p => p.id === id)) delete sessions[id]
       settings = next
       await saveSettings(bridge, settings)
-      reading = null
-      lastError = null
+      void saveSessions(bridge, sessions)
       await refresh()
       startTimers()
     },
-    onTest: async next => {
-      const r = await fetchReading({
-        nightscoutUrl: next.nightscoutUrl,
-        token: next.token || undefined,
-        relayUrl: next.relayUrl || undefined,
-      })
+    onTest: async (p: Profile, relayUrl: string) => {
+      const r = await fetchPoints(p, relayUrl || undefined, null)
+      if (r.session) sessions[p.id] = r.session as Session
       return r
     },
   })
-  phone.render({ settings, reading, lastError })
+  phone.render(phoneState())
 
   if (!bridge || !hud) {
     console.info('No Even bridge detected — running phone UI only.')
@@ -131,26 +160,29 @@ async function main() {
   const unsubscribe = bridge.onEvenHubEvent(event => {
     const sysType = eventTypeOf(event.sysEvent)
     const textType = eventTypeOf(event.textEvent)
+    const is = (t: OsEventTypeList) => sysType === t || textType === t
 
-    if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
+    if (is(OsEventTypeList.DOUBLE_CLICK_EVENT)) {
       stopTimers()
       unsubscribe()
       bridge.shutDownPageContainer(1)
       return
     }
-    if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
+    if (is(OsEventTypeList.SCROLL_TOP_EVENT)) {
+      void switchPerson(-1)
+      return
+    }
+    if (is(OsEventTypeList.SCROLL_BOTTOM_EVENT)) {
+      void switchPerson(1)
+      return
+    }
+    if (is(OsEventTypeList.CLICK_EVENT)) {
       void refresh()
       return
     }
     if (sysType === OsEventTypeList.FOREGROUND_ENTER_EVENT) {
-      // Host clears the page on backgrounding; a full rebuild is required here.
       void hud.rebuild(currentModel()).then(refresh)
       startTimers()
-      return
-    }
-    if (sysType === OsEventTypeList.FOREGROUND_EXIT_EVENT) {
-      // Keep polling (cheap) so the number is fresh the instant we come back;
-      // visual updates are dropped by the host while backgrounded anyway.
       return
     }
     if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {

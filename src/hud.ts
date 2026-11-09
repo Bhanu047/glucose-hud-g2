@@ -1,13 +1,16 @@
 /**
- * Glasses-side layout for the 576x288 canvas.
+ * Glasses layout, 576x288:
  *
  *  ┌──────────────────────────────┬───────────────────────┐
- *  │  [image 288x144]             │  Δ +4 mg/dL           │
- *  │   142 ↗                      │  Rising slowly        │
- *  │                              │  3 min ago            │
+ *  │ [big 288x136]  142 ↗         │ Δ +4 mg/dL            │
+ *  │                              │ Rising slowly         │
+ *  │                              │ 3 min ago             │
+ *  │                              │ ▼ LOW in ~18 min      │
+ *  ├──────────────────────────────┼───────────────────────┤
+ *  │ [chart 288x96] 3h + band     │ 24h in range 78%      │
+ *  │                              │ avg 128 · 68–195      │
  *  ├──────────────────────────────┴───────────────────────┤
- *  │  ● In range  70–180 mg/dL                             │
- *  │  tap: refresh · double-tap: exit                      │
+ *  │ ● In range 70–180 mg/dL                Mia  1/2 ↕    │
  *  └───────────────────────────────────────────────────────┘
  */
 import {
@@ -21,228 +24,214 @@ import {
 } from '@evenrealities/even_hub_sdk'
 import {
   classify,
+  computeStats,
+  currentReading,
   formatAge,
   formatDelta,
   formatGlucose,
+  formatPrediction,
   isStale,
+  predict,
   rangeLabel,
   trendArrow,
   trendLabel,
   unitsLabel,
-  type Reading,
-} from './nightscout'
-import { BIG_H, BIG_W, renderBigTile, renderMessageTile } from './render'
+  type Point,
+} from './glucose'
+import { BIG_H, BIG_W, CHART_H, CHART_W, renderBigTile, renderBlankChart, renderChart, renderMessageTile } from './render'
 import type { Settings } from './settings'
 
-const ID = { big: 1, info: 2, status: 3, foot: 4 } as const
-const NAME = { big: 'big', info: 'info', status: 'status', foot: 'foot' } as const
+const ID = { big: 1, chart: 2, info: 3, stats: 4, status: 5 } as const
+const NAME = { big: 'big', chart: 'chart', info: 'info', stats: 'stats', status: 'status' } as const
 
-const FOOTER = 'tap: refresh · double-tap: exit'
+function text(id: number, name: string, x: number, y: number, w: number, h: number, capture = 0) {
+  return new TextContainerProperty({
+    xPosition: x,
+    yPosition: y,
+    width: w,
+    height: h,
+    borderWidth: 0,
+    borderColor: 5,
+    paddingLength: 4,
+    containerID: id,
+    containerName: name,
+    content: '',
+    isEventCapture: capture,
+  })
+}
 
 function containers() {
-  const big = new ImageContainerProperty({
-    xPosition: 8,
-    yPosition: 32,
-    width: BIG_W,
-    height: BIG_H,
-    containerID: ID.big,
-    containerName: NAME.big,
-  })
-  const info = new TextContainerProperty({
-    xPosition: 312,
-    yPosition: 40,
-    width: 256,
-    height: 136,
-    borderWidth: 0,
-    borderColor: 5,
-    paddingLength: 4,
-    containerID: ID.info,
-    containerName: NAME.info,
-    content: '',
-    isEventCapture: 0,
-  })
-  const status = new TextContainerProperty({
-    xPosition: 8,
-    yPosition: 200,
-    width: 560,
-    height: 48,
-    borderWidth: 0,
-    borderColor: 5,
-    paddingLength: 4,
-    containerID: ID.status,
-    containerName: NAME.status,
-    content: 'Connecting…',
-    isEventCapture: 1,
-  })
-  const foot = new TextContainerProperty({
-    xPosition: 8,
-    yPosition: 250,
-    width: 560,
-    height: 38,
-    borderWidth: 0,
-    borderColor: 5,
-    paddingLength: 4,
-    containerID: ID.foot,
-    containerName: NAME.foot,
-    content: FOOTER,
-    isEventCapture: 0,
-  })
-  return { big, info, status, foot }
+  return {
+    big: new ImageContainerProperty({
+      xPosition: 8,
+      yPosition: 2,
+      width: BIG_W,
+      height: BIG_H,
+      containerID: ID.big,
+      containerName: NAME.big,
+    }),
+    chart: new ImageContainerProperty({
+      xPosition: 8,
+      yPosition: 146,
+      width: CHART_W,
+      height: CHART_H,
+      containerID: ID.chart,
+      containerName: NAME.chart,
+    }),
+    info: text(ID.info, NAME.info, 304, 8, 268, 132),
+    stats: text(ID.stats, NAME.stats, 304, 150, 268, 92),
+    status: text(ID.status, NAME.status, 8, 250, 564, 38, 1),
+  }
 }
 
 export interface HudModel {
+  big: string
+  chart: string
   info: string
+  stats: string
   status: string
-  tile: string // base64 png
 }
 
-/** Pure: turns a reading + settings into the strings/pixels to show. */
-export function buildModel(reading: Reading | null, s: Settings, now = Date.now()): HudModel {
-  if (!reading) {
+export interface PersonLabel {
+  name: string
+  index: number
+  count: number
+}
+
+function personSuffix(p?: PersonLabel): string {
+  if (!p) return ''
+  return p.count > 1 ? `   ${p.name} ${p.index + 1}/${p.count} ↕` : p.name && p.name !== 'Me' ? `   ${p.name}` : ''
+}
+
+/** Pure-ish (uses canvas): turns history + settings into what the glasses show. */
+export function buildModel(points: Point[], s: Settings, person?: PersonLabel, now = Date.now()): HudModel {
+  const cur = currentReading(points)
+  const u = unitsLabel(s.units)
+  const range = `${formatGlucose(s.thresholds.low, s.units)}–${formatGlucose(s.thresholds.high, s.units)} ${u}`
+  if (!cur) {
     return {
+      big: renderMessageTile('No data'),
+      chart: renderBlankChart(),
       info: '',
-      status: 'No data yet',
-      tile: renderMessageTile('No data'),
+      stats: '',
+      status: `No data yet${personSuffix(person)}`,
     }
   }
-  const stale = isStale(reading.at, now)
-  const state = classify(reading.mgdl, s.thresholds)
-  const alert = state !== 'inRange'
-  const u = unitsLabel(s.units)
+  const stale = isStale(cur.at, now)
+  const state = classify(cur.mgdl, s.thresholds)
+  const pred = stale ? null : predict(points, s.thresholds, now)
 
-  const info = [
-    `Δ ${formatDelta(reading.deltaMgdl, s.units)} ${u}`,
-    trendLabel(reading.trend),
-    formatAge(reading.at, now),
-  ].join('\n')
+  const info = [`Δ ${formatDelta(cur.deltaMgdl, s.units)} ${u}`, trendLabel(cur.trend), formatAge(cur.at, now)]
+  if (pred) info.push(formatPrediction(pred))
+
+  const st = computeStats(points, s.thresholds, now)
+  const stats = st
+    ? [
+        `${st.hours}h in range ${st.tir}%`,
+        `avg ${formatGlucose(st.avg, s.units)} · ${formatGlucose(st.min, s.units)}–${formatGlucose(st.max, s.units)}`,
+      ].join('\n')
+    : 'Collecting history…'
 
   let status: string
-  if (stale) {
-    status = `▲ STALE — last reading ${formatAge(reading.at, now)}`
-  } else if (alert) {
-    const marker = state === 'low' || state === 'urgentLow' ? '▼' : '▲'
-    status = `${marker} ${rangeLabel(state)}  (${formatGlucose(s.thresholds.low, s.units)}–${formatGlucose(s.thresholds.high, s.units)} ${u})`
-  } else {
-    status = `● In range  ${formatGlucose(s.thresholds.low, s.units)}–${formatGlucose(s.thresholds.high, s.units)} ${u}`
-  }
+  if (stale) status = `▲ STALE — last reading ${formatAge(cur.at, now)}`
+  else if (state !== 'inRange') status = `${state === 'low' || state === 'urgentLow' ? '▼' : '▲'} ${rangeLabel(state)}  (${range})`
+  else status = `● In range  ${range}`
+  status += personSuffix(person)
 
-  const tile = renderBigTile({
-    value: formatGlucose(reading.mgdl, s.units),
-    arrow: trendArrow(reading.trend),
-    alert,
-    stale,
-  })
-
-  return { info, status, tile }
-}
-
-export function errorModel(message: string): HudModel {
   return {
-    info: '',
-    status: `▲ ${message}`.slice(0, 120),
-    tile: renderMessageTile('Error', 'check settings on phone'),
+    big: renderBigTile({
+      value: formatGlucose(cur.mgdl, s.units),
+      arrow: trendArrow(cur.trend),
+      alert: state !== 'inRange' || pred?.kind === 'low',
+      stale,
+    }),
+    chart: renderChart(points, s.thresholds, now),
+    info: info.join('\n'),
+    stats,
+    status,
   }
 }
 
-export function setupModel(): HudModel {
+export function messageModel(title: string, sub: string, info: string, status: string): HudModel {
   return {
-    info: 'Open this plugin on\nyour phone to enter\nyour Nightscout URL.',
-    status: 'Not configured',
-    tile: renderMessageTile('Setup', 'needed'),
+    big: renderMessageTile(title, sub),
+    chart: renderBlankChart(),
+    info,
+    stats: '',
+    status,
   }
 }
 
 export class Hud {
   private created = false
   private imageBusy = false
-  private pendingTile: string | null = null
+  private pending: Array<{ id: number; name: string; data: string }> = []
   private last: HudModel | null = null
 
   constructor(private bridge: EvenAppBridge) {}
 
-  /** First paint. Must be called exactly once per app launch. */
-  async create(model: HudModel): Promise<boolean> {
+  private layout(model: HudModel) {
     const c = containers()
     c.info.content = model.info
+    c.stats.content = model.stats
     c.status.content = model.status
-    const result = await this.bridge.createStartUpPageContainer(
-      new CreateStartUpPageContainer({
-        containerTotalNum: 4,
-        imageObject: [c.big],
-        textObject: [c.info, c.status, c.foot],
-      }),
-    )
+    return {
+      containerTotalNum: 5,
+      imageObject: [c.big, c.chart],
+      textObject: [c.info, c.stats, c.status],
+    }
+  }
+
+  async create(model: HudModel): Promise<boolean> {
+    const result = await this.bridge.createStartUpPageContainer(new CreateStartUpPageContainer(this.layout(model)))
     this.created = result === 0
     if (this.created) {
       this.last = model
-      await this.sendTile(model.tile)
+      await this.sendImage(ID.big, NAME.big, model.big)
+      await this.sendImage(ID.chart, NAME.chart, model.chart)
     }
     return this.created
   }
 
-  /**
-   * Full redraw. Used after FOREGROUND_ENTER, when the host has cleared the
-   * page and in-place upgrades would be dropped.
-   */
+  /** Full redraw after FOREGROUND_ENTER (the host clears the page when backgrounded). */
   async rebuild(model: HudModel): Promise<void> {
-    const c = containers()
-    c.info.content = model.info
-    c.status.content = model.status
-    await this.bridge.rebuildPageContainer(
-      new RebuildPageContainer({
-        containerTotalNum: 4,
-        imageObject: [c.big],
-        textObject: [c.info, c.status, c.foot],
-      }),
-    )
+    await this.bridge.rebuildPageContainer(new RebuildPageContainer(this.layout(model)))
     this.last = model
-    await this.sendTile(model.tile)
+    await this.sendImage(ID.big, NAME.big, model.big)
+    await this.sendImage(ID.chart, NAME.chart, model.chart)
   }
 
-  /** Cheap in-place update: only touches what changed. */
   async update(model: HudModel): Promise<void> {
     if (!this.created) return
     const prev = this.last
     this.last = model
     const jobs: Promise<unknown>[] = []
-    if (!prev || prev.info !== model.info) {
-      jobs.push(
-        this.bridge.textContainerUpgrade(
-          new TextContainerUpgrade({ containerID: ID.info, containerName: NAME.info, content: model.info }),
-        ),
-      )
-    }
-    if (!prev || prev.status !== model.status) {
-      jobs.push(
-        this.bridge.textContainerUpgrade(
-          new TextContainerUpgrade({ containerID: ID.status, containerName: NAME.status, content: model.status }),
-        ),
-      )
-    }
+    const up = (id: number, name: string, content: string) =>
+      jobs.push(this.bridge.textContainerUpgrade(new TextContainerUpgrade({ containerID: id, containerName: name, content })))
+    if (prev?.info !== model.info) up(ID.info, NAME.info, model.info)
+    if (prev?.stats !== model.stats) up(ID.stats, NAME.stats, model.stats)
+    if (prev?.status !== model.status) up(ID.status, NAME.status, model.status)
     await Promise.all(jobs)
-    if (!prev || prev.tile !== model.tile) await this.sendTile(model.tile)
+    if (prev?.big !== model.big) await this.sendImage(ID.big, NAME.big, model.big)
+    if (prev?.chart !== model.chart) await this.sendImage(ID.chart, NAME.chart, model.chart)
   }
 
-  /** Image sends must never overlap; queue the latest and drop older ones. */
-  private async sendTile(base64Png: string): Promise<void> {
+  /** Image sends must never overlap. Keep only the latest pending frame per container. */
+  private async sendImage(id: number, name: string, data: string): Promise<void> {
     if (this.imageBusy) {
-      this.pendingTile = base64Png
+      this.pending = this.pending.filter(p => p.id !== id)
+      this.pending.push({ id, name, data })
       return
     }
     this.imageBusy = true
     try {
-      await this.bridge.updateImageRawData(
-        new ImageRawDataUpdate({ containerID: ID.big, containerName: NAME.big, imageData: base64Png }),
-      )
+      await this.bridge.updateImageRawData(new ImageRawDataUpdate({ containerID: id, containerName: name, imageData: data }))
     } catch (e) {
       console.warn('image send failed', e)
     } finally {
       this.imageBusy = false
     }
-    if (this.pendingTile) {
-      const next = this.pendingTile
-      this.pendingTile = null
-      await this.sendTile(next)
-    }
+    const next = this.pending.shift()
+    if (next) await this.sendImage(next.id, next.name, next.data)
   }
 }

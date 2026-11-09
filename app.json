@@ -2,16 +2,20 @@
   "package_id": "com.bhanu.glucosehud",
   "edition": "202601",
   "name": "Glucose HUD",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "min_app_version": "2.2.7",
   "min_sdk_version": "0.0.10",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "network",
-      "desc": "Fetches your latest glucose reading from your own Nightscout site via a stateless relay that stores nothing.",
-      "whitelist": ["https://glucose-relay.bhanumanideep.workers.dev"]
+      "desc": "Fetches glucose readings from your Nightscout site, LibreLinkUp or Dexcom Share via a stateless relay that stores nothing.",
+      "whitelist": [
+        "https://glucose-relay.bhanumanideep.workers.dev"
+      ]
     }
   ],
-  "supported_languages": ["en"]
+  "supported_languages": [
+    "en"
+  ]
 }

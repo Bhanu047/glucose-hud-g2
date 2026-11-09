@@ -1,41 +1,46 @@
 #!/usr/bin/env bash
-# Drives the Even Hub simulator headlessly and captures glasses screenshots
-# for each mock scenario. Requires: Xvfb, mock server on :1337, vite on :5173.
+# Drives the Even Hub simulator headlessly and captures glasses screenshots.
+# Needs: Xvfb, `node mock/nightscout.mjs` (:1337), `node scripts/dev-relay.mjs`
+# (:8787) and `npx vite --port 5173` running.
 #   bash scripts/sim-shots.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SIM=$PWD/node_modules/@evenrealities/sim-linux-x64/bin/evenhub-simulator
 PORT=9898
+APP=http://localhost:5173/
+RELAY=http://localhost:8787
 mkdir -p shots
 
-shot() { # name url
+enc() { python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$1"; }
+
+start() { # url
   pkill -f evenhub-simulator >/dev/null 2>&1 || true
   sleep 0.5
-  xvfb-run -a -s "-screen 0 1400x900x24" "$SIM" "$2" --automation-port $PORT >/tmp/sim-$1.log 2>&1 &
+  xvfb-run -a -s "-screen 0 1400x900x24" "$SIM" "$1" --automation-port $PORT >/tmp/sim.log 2>&1 &
   for _ in $(seq 1 40); do sleep 0.5; curl -sf http://127.0.0.1:$PORT/api/ping >/dev/null && break; done
-  sleep 6
-  curl -s http://127.0.0.1:$PORT/api/screenshot/glasses -o "shots/$1.png"
-  echo "shots/$1.png"
+  sleep 7
 }
+snap() { curl -s http://127.0.0.1:$PORT/api/screenshot/glasses -o "shots/$1.png"; echo "shots/$1.png"; }
+input() { curl -s -X POST http://127.0.0.1:$PORT/api/input -H 'Content-Type: application/json' -d "{\"action\":\"$1\"}" >/dev/null; }
 
-shot normal      "http://localhost:5173/?ns=http://localhost:1337"
-shot low         "http://localhost:5173/?ns=http://localhost:1337/low"
-shot urgent-high "http://localhost:5173/?ns=http://localhost:1337/uhigh"
-shot stale       "http://localhost:5173/?ns=http://localhost:1337/stale"
-shot mmol        "http://localhost:5173/?ns=http://localhost:1337/flat&units=mmol"
-shot unconfigured "http://localhost:5173/"
-shot bad-token   "http://localhost:5173/?ns=http://localhost:1337&token=wrong"
+PEOPLE='[{"name":"Mia","source":"libre","username":"a@b.c","password":"pw","patientId":"pt-mia"},{"name":"Dad","source":"libre","username":"a@b.c","password":"pw","patientId":"pt-dad"}]'
 
-# Interaction: tap should refresh (value changes with the drifting mock),
-# double-tap should exit (console shows shutDown).
-shot tap-before "http://localhost:5173/?ns=http://localhost:1337"
-curl -s -X POST http://127.0.0.1:$PORT/api/input -H 'Content-Type: application/json' -d '{"action":"click"}' >/dev/null
-sleep 3
-curl -s http://127.0.0.1:$PORT/api/screenshot/glasses -o shots/tap-after.png
-echo shots/tap-after.png
-curl -s -X POST http://127.0.0.1:$PORT/api/input -H 'Content-Type: application/json' -d '{"action":"double_click"}' >/dev/null
-sleep 2
-curl -s http://127.0.0.1:$PORT/api/console | grep -oE '"message":"[^"]*(shutDown|exit|Exit)[^"]*"' | head -3 || true
-curl -s http://127.0.0.1:$PORT/api/screenshot/glasses -o shots/after-exit.png
-echo shots/after-exit.png
+# Caregiver mode via LibreLinkUp: Mia is falling (predicted LOW); swipe → Dad
+start "${APP}?relay=$(enc $RELAY)&people=$(enc "$PEOPLE")"
+snap v2-libre-mia
+input down; sleep 4; snap v2-libre-dad
+input up;   sleep 4; snap v2-libre-mia-again
+curl -s "http://127.0.0.1:$PORT/api/console" | grep -oE '"message":"[^"]*(failed|error|Error)[^"]*"' | head -5 || true
+
+start "${APP}?src=dexcom&user=u&pass=pw&relay=$(enc $RELAY)"
+snap v2-dexcom
+
+start "${APP}?ns=$(enc http://localhost:1337/normal)"; snap v2-ns-normal
+start "${APP}?ns=$(enc http://localhost:1337/low)"; snap v2-ns-low
+start "${APP}?ns=$(enc http://localhost:1337/uhigh)"; snap v2-ns-uhigh
+start "${APP}?ns=$(enc http://localhost:1337/stale)"; snap v2-ns-stale
+start "${APP}?ns=$(enc http://localhost:1337/flat)&units=mmol"; snap v2-ns-mmol
+start "${APP}?src=libre&user=a@b.c&pass=wrong&relay=$(enc $RELAY)"; snap v2-error
+start "${APP}"; snap v2-unconfigured
+
 pkill -f evenhub-simulator >/dev/null 2>&1 || true

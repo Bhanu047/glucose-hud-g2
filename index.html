@@ -27,40 +27,51 @@
       #app { padding: 20px 16px 40px; max-width: 520px; margin: 0 auto; }
       h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
       .note { color: var(--muted); font-size: 13px; margin: 0 0 16px; }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 14px;
-        margin-bottom: 14px;
-      }
+      .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
       .card h2 { font-size: 13px; font-weight: 500; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
       label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
       input, select {
-        width: 100%; box-sizing: border-box;
-        background: #1b1b1b; color: var(--fg);
-        border: 1px solid var(--line); border-radius: 8px;
-        padding: 10px 12px; font-size: 15px;
+        width: 100%; box-sizing: border-box; background: #1b1b1b; color: var(--fg);
+        border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 15px;
+      }
+      select {
+        -webkit-appearance: none; appearance: none; padding-right: 34px;
+        background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+        background-position: calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+        background-size: 5px 5px; background-repeat: no-repeat;
       }
       input:focus, select:focus { outline: none; border-color: var(--accent); }
       .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
       .actions { display: flex; gap: 10px; margin-top: 14px; }
       button {
-        flex: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--line);
+        flex: 1; padding: 11px; border-radius: 8px; border: 1px solid var(--line);
         background: #1b1b1b; color: var(--fg); font-size: 15px;
       }
       button.primary { background: var(--accent); color: #0b2a10; border-color: var(--accent); font-weight: 600; }
+      button.small { flex: 0 0 auto; padding: 6px 10px; font-size: 13px; }
       button:disabled { opacity: .5; }
-      #msg { min-height: 20px; margin-top: 10px; font-size: 13px; color: var(--muted); }
-      #msg.ok { color: var(--accent); }
-      #msg.err { color: var(--err); }
-      #preview { text-align: center; padding: 10px 0 4px; }
-      #preview .big { font-size: 56px; font-weight: 700; letter-spacing: -1px; color: var(--accent); }
+      .msg { min-height: 18px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+      .msg.ok { color: var(--accent); }
+      .msg.err { color: var(--err); }
+      #preview { text-align: center; padding: 6px 0 2px; }
+      #preview .who { color: var(--muted); font-size: 13px; }
+      #preview .big { font-size: 56px; font-weight: 700; letter-spacing: -1px; color: var(--accent); line-height: 1.1; }
+      #preview .big.alert { color: var(--err); }
       #preview .arrow { font-size: 40px; }
       #preview .sub { color: var(--muted); font-size: 14px; }
+      #preview .warn { color: #ffd479; font-size: 14px; margin-top: 4px; }
       #preview .sub.err { color: var(--err); }
+      .person { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+      .person:first-child { border-top: 0; }
+      .person .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); flex: 0 0 auto; }
+      .person.active .dot { background: var(--accent); border-color: var(--accent); }
+      .person .meta { flex: 1; min-width: 0; }
+      .person .meta b { display: block; font-weight: 500; }
+      .person .meta span { color: var(--muted); font-size: 13px; }
+      .empty { color: var(--muted); font-size: 14px; }
+      .hidden { display: none !important; }
       .fine { color: var(--muted); font-size: 12px; margin-top: 8px; }
-      a { color: var(--accent); }
+      details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     </style>
   </head>
   <body>
@@ -73,15 +84,60 @@
         <div id="preview"><div class="sub">No reading yet</div></div>
       </div>
 
-      <div class="card">
-        <h2>Nightscout</h2>
-        <label for="ns-url">Site URL</label>
-        <input id="ns-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://my-site.example.com" />
-        <label for="ns-token">Access token <span style="font-weight:400">(if your site requires one)</span></label>
-        <input id="ns-token" type="password" autocapitalize="off" autocorrect="off" placeholder="readable-abc123…" />
-        <label for="relay-url">Relay URL</label>
-        <input id="relay-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://glucose-relay.bhanumanideep.workers.dev" />
-        <p class="fine">Even Hub only lets a plugin reach pre-approved servers, so readings pass through a stateless relay that stores nothing. Clear this field in the simulator to call Nightscout directly.</p>
+      <div class="card" id="people-card">
+        <h2>People</h2>
+        <div id="people"></div>
+        <div class="actions"><button id="add-person">+ Add person</button></div>
+        <p class="fine">Add yourself, or anyone who shares their glucose with you (child, partner, parent). Swipe on the glasses or ring to switch between people.</p>
+      </div>
+
+      <div class="card hidden" id="editor">
+        <h2 id="editor-title">Add person</h2>
+        <label for="p-name">Name shown on glasses</label>
+        <input id="p-name" maxlength="12" placeholder="Me, Mia, Dad…" />
+        <label for="p-source">Data source</label>
+        <select id="p-source">
+          <option value="libre">FreeStyle Libre (LibreLinkUp)</option>
+          <option value="dexcom">Dexcom Share</option>
+          <option value="nightscout">Nightscout (any CGM)</option>
+        </select>
+
+        <div id="f-ns">
+          <label for="p-ns-url">Nightscout site URL</label>
+          <input id="p-ns-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://my-site.example.com" />
+          <label for="p-ns-token">Access token (if your site requires one)</label>
+          <input id="p-ns-token" type="password" autocapitalize="off" autocorrect="off" placeholder="readable-abc123…" />
+        </div>
+
+        <div id="f-account">
+          <label for="p-user" id="p-user-label">LibreLinkUp email</label>
+          <input id="p-user" autocapitalize="off" autocorrect="off" autocomplete="username" />
+          <label for="p-pass">Password</label>
+          <input id="p-pass" type="password" autocomplete="current-password" />
+          <div id="f-region">
+            <label for="p-region">Region</label>
+            <select id="p-region">
+              <option value="us">United States</option>
+              <option value="ous">Outside the US</option>
+              <option value="jp">Japan</option>
+            </select>
+          </div>
+          <div id="f-patient" class="hidden">
+            <label for="p-patient">Which person on this account</label>
+            <select id="p-patient"></select>
+          </div>
+          <p class="fine" id="account-hint"></p>
+        </div>
+
+        <div class="actions">
+          <button id="p-test">Test</button>
+          <button id="p-save" class="primary">Save person</button>
+        </div>
+        <div class="actions">
+          <button id="p-cancel">Cancel</button>
+          <button id="p-delete" class="hidden">Remove</button>
+        </div>
+        <div class="msg" id="p-msg"></div>
       </div>
 
       <div class="card">
@@ -103,15 +159,17 @@
           <option value="120">2 minutes</option>
           <option value="300">5 minutes</option>
         </select>
+        <details style="margin-top:12px">
+          <summary>Advanced</summary>
+          <label for="relay-url">Relay URL</label>
+          <input id="relay-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" />
+          <p class="fine">Even Hub only lets plugins reach pre-approved servers, so data passes through a stateless relay that stores nothing. You can run your own (see the GitHub repo).</p>
+        </details>
+        <div class="actions"><button id="save-display" class="primary">Save display settings</button></div>
+        <div class="msg" id="d-msg"></div>
       </div>
 
-      <div class="actions">
-        <button id="test">Test connection</button>
-        <button id="save" class="primary">Save</button>
-      </div>
-      <div id="msg"></div>
-
-      <p class="fine">This plugin displays data from your own Nightscout site for convenience. It is not a medical device; always confirm with your meter or CGM app before making treatment decisions.</p>
+      <p class="fine">Passwords and tokens are stored only in the Even app on this phone and are sent over HTTPS only when a new login is needed. Not a medical device; always confirm with your meter or CGM app before making treatment decisions.</p>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

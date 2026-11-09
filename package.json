@@ -1,7 +1,7 @@
 {
   "name": "glucose-hud-g2",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "pack": "npm run build && evenhub pack app.json dist",
     "simulate": "evenhub-simulator http://localhost:5173",
-    "test": "tsc src/nightscout.ts --outDir dist-test --target es2022 --module esnext --moduleResolution bundler --skipLibCheck && node --test test/*.test.mjs",
+    "test": "rm -rf dist-test && tsc src/glucose.ts src/sources.ts --outDir dist-test --target es2022 --module esnext --moduleResolution bundler --skipLibCheck && sed -i \"s#from './glucose'#from './glucose.js'#\" dist-test/sources.js && node --test test/*.test.mjs",
     "mock": "node mock/nightscout.mjs"
   },
   "dependencies": {
