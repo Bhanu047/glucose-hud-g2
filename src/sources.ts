@@ -10,8 +10,9 @@
  * actually needed (first run, or the session expired).
  */
 import { toPoints, type Point } from './glucose'
+import { demoPoints } from './demo'
 
-export type SourceKind = 'nightscout' | 'libre' | 'dexcom'
+export type SourceKind = 'nightscout' | 'libre' | 'dexcom' | 'demo'
 
 export interface Profile {
   id: string
@@ -34,6 +35,7 @@ export const SOURCE_LABELS: Record<SourceKind, string> = {
   nightscout: 'Nightscout',
   libre: 'FreeStyle Libre (LibreLinkUp)',
   dexcom: 'Dexcom Share',
+  demo: 'Demo (sample data)',
 }
 
 export function newProfile(partial: Partial<Profile> = {}): Profile {
@@ -51,6 +53,7 @@ export function newProfile(partial: Partial<Profile> = {}): Profile {
 }
 
 export function profileIsComplete(p: Profile): boolean {
+  if (p.source === 'demo') return true
   if (p.source === 'nightscout') return p.nsUrl.trim().length > 0
   return p.username.trim().length > 0 && p.password.length > 0
 }
@@ -165,6 +168,7 @@ export async function fetchPoints(
   session: Session | null,
   signal?: AbortSignal,
 ): Promise<FetchResult> {
+  if (p.source === 'demo') return { points: demoPoints(p.region === 'steady' ? 'steady' : 'falling'), session: null }
   if (p.source === 'nightscout') return fetchNightscout(p, relayUrl, signal)
   return fetchViaRelay(p, relayUrl, session, signal)
 }

@@ -97,6 +97,22 @@ export function mountPhoneUi(props: PhoneUiProps) {
     openEditor(newProfile({ name: settings.profiles.length === 0 ? 'Me' : '' }), true),
   )
 
+  // One tap: two sample people so every feature shows up on the glasses,
+  // including the predicted-low warning and swiping between people.
+  $('try-demo').addEventListener('click', async () => {
+    const hasDemo = settings.profiles.some(p => p.source === 'demo')
+    if (!hasDemo) {
+      settings.profiles.push(
+        newProfile({ name: 'Alex', source: 'demo', region: 'falling' }),
+        newProfile({ name: 'Sam', source: 'demo', region: 'steady' }),
+      )
+    }
+    settings.active = settings.profiles.findIndex(p => p.source === 'demo')
+    closeEditor()
+    renderPeople()
+    await props.onSave(clone(settings))
+  })
+
   /* ---------------- Editor ---------------- */
 
   const f = {
@@ -128,7 +144,7 @@ export function mountPhoneUi(props: PhoneUiProps) {
   const syncSourceFields = () => {
     const src = f.source.value as SourceKind
     f.nsBox.classList.toggle('hidden', src !== 'nightscout')
-    f.accBox.classList.toggle('hidden', src === 'nightscout')
+    f.accBox.classList.toggle('hidden', src === 'nightscout' || src === 'demo')
     f.regionBox.classList.toggle('hidden', src !== 'dexcom')
     if (src === 'libre') {
       f.userLabel.textContent = 'LibreLinkUp email'
@@ -182,7 +198,18 @@ export function mountPhoneUi(props: PhoneUiProps) {
       nsToken: f.nsToken.value.trim(),
       username: f.user.value.trim(),
       password: f.pass.value,
-      region: src === 'dexcom' ? f.region.value : src === 'libre' ? (editing?.source === 'libre' ? editing.region : '') : '',
+      region:
+        src === 'dexcom'
+          ? f.region.value
+          : src === 'libre'
+            ? editing?.source === 'libre'
+              ? editing.region
+              : ''
+            : src === 'demo'
+              ? editing?.source === 'demo' && editing.region
+                ? editing.region
+                : 'falling'
+              : '',
       patientId: src === 'libre' ? f.patient.value || '' : '',
     })
   }

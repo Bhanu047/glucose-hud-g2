@@ -48,7 +48,12 @@ async function main() {
   const currentModel = (): HudModel => {
     const p = activeProfile(settings)
     if (!p || !profileIsComplete(p)) {
-      return messageModel('Setup', 'needed', 'Open this plugin on\nyour phone and add\na person to follow.', 'Not configured')
+      return messageModel(
+        'Setup',
+        'needed',
+        'Open this plugin on\nyour phone: add a\nperson, or tap\n"Try demo".',
+        'Not configured',
+      )
     }
     const pts = history.get(p.id) ?? []
     const err = errors.get(p.id)

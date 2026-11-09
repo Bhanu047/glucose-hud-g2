@@ -9,6 +9,7 @@ Glanceable CGM glucose on Even Realities G2 glasses — for yourself or the peop
 - **Caregiver mode:** follow several people (a child, a partner, a parent) and swipe between them on the glasses or ring
 - **3-hour chart** with your target range, plus **time in range**, average, min/max
 - Big number, trend arrow, change per 5 min, reading age; LOW / HIGH / URGENT / STALE states; mg/dL or mmol/L; your own thresholds
+- **Demo mode:** tap "Try demo" to see everything on your glasses without a sensor or account
 - Tap to refresh, swipe to switch person, double-tap to exit
 
 **Not a medical device.** For convenience only. Confirm with your meter or CGM app before treatment decisions.
@@ -51,7 +52,7 @@ Dev-only URL overrides skip the settings form, e.g.
 `?relay=http://localhost:8787&src=libre&user=a@b.c&pass=pw`.
 
 ```bash
-npm test                        # 27 tests: glucose logic + relay with stubbed upstreams
+npm test                        # 28 tests: glucose logic, demo data, relay with stubbed upstreams
 bash scripts/sim-shots.sh       # headless simulator screenshots of every state → shots/
 ```
 
