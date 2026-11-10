@@ -54,7 +54,7 @@ export function newProfile(partial: Partial<Profile> = {}): Profile {
 
 export function profileIsComplete(p: Profile): boolean {
   if (p.source === 'demo') return true
-  if (p.source === 'nightscout') return p.nsUrl.trim().length > 0
+  if (p.source === 'nightscout') return isFullUrl(p.nsUrl)
   return p.username.trim().length > 0 && p.password.length > 0
 }
 
@@ -72,11 +72,17 @@ export interface FetchResult {
   patientId?: string
 }
 
+/**
+ * Trims whitespace and trailing slashes. Deliberately does NOT add a scheme:
+ * the plugin must never assemble URLs to arbitrary hosts (Even Hub review
+ * flags any URL not in the network whitelist). Users enter the full address;
+ * the phone UI validates it with isFullUrl().
+ */
 export function normalizeBaseUrl(url: string): string {
-  let u = url.trim()
-  if (u && !/^https?:\/\//i.test(u)) u = `https://${u}`
-  return u.replace(/\/+$/, '')
+  return url.trim().replace(/\/+$/, '')
 }
+
+export const isFullUrl = (url: string) => /^https?:\/\/[^/\s]+/i.test(url.trim())
 
 /** 24 h at 5-minute resolution. */
 const HISTORY_COUNT = 288

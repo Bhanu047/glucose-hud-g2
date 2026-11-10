@@ -58,7 +58,8 @@ export function migrate(raw: unknown): Settings {
     ...d,
     profiles,
     active: typeof r.active === 'number' ? r.active : 0,
-    relayUrl: typeof r.relayUrl === 'string' && r.relayUrl.trim() ? r.relayUrl : d.relayUrl,
+    // Production builds only ever talk to the whitelisted relay.
+    relayUrl: import.meta.env.DEV && typeof r.relayUrl === 'string' && r.relayUrl.trim() ? r.relayUrl : d.relayUrl,
     units: r.units === 'mmol' ? 'mmol' : 'mgdl',
     thresholds: { ...DEFAULT_THRESHOLDS, ...((r.thresholds as Partial<Thresholds>) ?? {}) },
     pollSeconds: typeof r.pollSeconds === 'number' ? r.pollSeconds : d.pollSeconds,
@@ -109,7 +110,7 @@ export const activeProfile = (s: Settings): Profile | null => s.profiles[s.activ
  *   ?people=[{"name":"Mia","source":"libre",...}]&relay=...
  */
 function applyDevOverrides(s: Settings): Settings {
-  if (typeof location === 'undefined') return s
+  if (!import.meta.env.DEV || typeof location === 'undefined') return s
   const q = new URLSearchParams(location.search)
   const out: Settings = { ...s }
   if (q.has('relay')) out.relayUrl = q.get('relay') ?? ''

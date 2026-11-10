@@ -108,7 +108,7 @@
 
         <div id="f-ns">
           <label for="p-ns-url">Nightscout site URL</label>
-          <input id="p-ns-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="https://my-site.example.com" />
+          <input id="p-ns-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" placeholder="Full address, starting with https" />
           <label for="p-ns-token">Access token (if your site requires one)</label>
           <input id="p-ns-token" type="password" autocapitalize="off" autocorrect="off" placeholder="readable-abc123…" />
         </div>
@@ -163,7 +163,7 @@
           <option value="120">2 minutes</option>
           <option value="300">5 minutes</option>
         </select>
-        <details style="margin-top:12px">
+        <details id="advanced" style="margin-top:12px">
           <summary>Advanced</summary>
           <label for="relay-url">Relay URL</label>
           <input id="relay-url" type="url" inputmode="url" autocapitalize="off" autocorrect="off" />

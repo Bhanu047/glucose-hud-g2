@@ -217,7 +217,7 @@ export function mountPhoneUi(props: PhoneUiProps) {
   $('p-test').addEventListener('click', async () => {
     const p = readEditor()
     if (!profileIsComplete(p)) {
-      setMsg(f.msg, p.source === 'nightscout' ? 'Enter the Nightscout URL.' : 'Enter the username and password.', 'err')
+      setMsg(f.msg, p.source === 'nightscout' ? 'Enter the full Nightscout address (it starts with https)' : 'Enter the username and password.', 'err')
       return
     }
     const btn = $<HTMLButtonElement>('p-test')
@@ -250,7 +250,7 @@ export function mountPhoneUi(props: PhoneUiProps) {
   $('p-save').addEventListener('click', async () => {
     const p = readEditor()
     if (!profileIsComplete(p)) {
-      setMsg(f.msg, 'Fill in the connection details first.', 'err')
+      setMsg(f.msg, p.source === 'nightscout' ? 'Enter the full Nightscout address (it starts with https)' : 'Fill in the connection details first.', 'err')
       return
     }
     const i = settings.profiles.findIndex(x => x.id === p.id)
@@ -326,7 +326,7 @@ export function mountPhoneUi(props: PhoneUiProps) {
     settings.units = u
     settings.thresholds = t
     settings.pollSeconds = Number(d.poll.value) || 60
-    settings.relayUrl = d.relay.value.trim()
+    if (import.meta.env.DEV) settings.relayUrl = d.relay.value.trim()
     setMsg($('d-msg'), 'Saving…')
     try {
       await props.onSave(clone(settings))
@@ -337,6 +337,8 @@ export function mountPhoneUi(props: PhoneUiProps) {
   })
 
   /* ---------------- Preview ---------------- */
+
+  if (!import.meta.env.DEV) $('advanced').classList.add('hidden')
 
   const preview = $('preview')
 

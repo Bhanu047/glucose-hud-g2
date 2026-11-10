@@ -111,7 +111,8 @@ test('predict: falls back to delta when only two sparse points (LibreLinkUp grap
 })
 
 test('nightscout URL: direct and via relay with 24h history', () => {
-  assert.equal(normalizeBaseUrl(' my.site.com/ '), 'https://my.site.com')
+  assert.equal(normalizeBaseUrl(' https://my.site.com/ '), 'https://my.site.com')
+  assert.equal(normalizeBaseUrl('my.site.com'), 'my.site.com') // never invents a scheme
   assert.equal(buildNightscoutUrl({ nsUrl: 'https://ns.example.com/', nsToken: 't1' }), 'https://ns.example.com/api/v1/entries.json?count=288&token=t1')
   assert.equal(
     buildNightscoutUrl({ nsUrl: 'https://ns.example.com', nsToken: '' }, 'https://r.workers.dev/'),
@@ -120,7 +121,8 @@ test('nightscout URL: direct and via relay with 24h history', () => {
 })
 
 test('profiles: completeness and defaults', () => {
-  assert.equal(profileIsComplete(newProfile({ source: 'nightscout', nsUrl: 'x' })), true)
+  assert.equal(profileIsComplete(newProfile({ source: 'nightscout', nsUrl: 'https://ns.example.com' })), true)
+  assert.equal(profileIsComplete(newProfile({ source: 'nightscout', nsUrl: 'ns.example.com' })), false)
   assert.equal(profileIsComplete(newProfile({ source: 'libre', username: 'a@b.c' })), false)
   assert.equal(profileIsComplete(newProfile({ source: 'dexcom', username: 'u', password: 'p' })), true)
   assert.equal(newProfile({ source: 'dexcom' }).region, 'us')
